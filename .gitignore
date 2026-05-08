@@ -1,0 +1,4 @@
+synd_env/
+.idea/
+__pycache__/
+*.pyc
