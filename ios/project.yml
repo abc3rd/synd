@@ -1,0 +1,21 @@
+name: Synd
+options:
+  bundleIdPrefix: org.synd
+targets:
+  Synd:
+    type: application
+    platform: iOS
+    deploymentTarget: "16.0"
+    sources:
+      - path: Sources
+      - path: ../native/ios/SyndBLETransport.swift
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: org.synd.ios
+        SWIFT_VERSION: 5.0
+        TARGETED_DEVICE_FAMILY: "1,2"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_NSBluetoothAlwaysUsageDescription: "Synd uses Bluetooth to discover nearby Synd devices."
+        INFOPLIST_KEY_UILaunchScreen_Generation: YES
+        CODE_SIGN_STYLE: Automatic
+        DEVELOPMENT_TEAM: ""
