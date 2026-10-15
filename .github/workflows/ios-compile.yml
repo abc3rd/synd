@@ -1,0 +1,19 @@
+name: iOS simulator compile
+on:
+  workflow_dispatch:
+  push:
+    branches: [feature/native-ble-foundation]
+    paths: ["ios/**", "native/ios/**", ".github/workflows/ios-compile.yml"]
+jobs:
+  compile:
+    runs-on: macos-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install XcodeGen
+        run: brew install xcodegen
+      - name: Generate Xcode project
+        run: cd ios && xcodegen generate
+      - name: Compile for simulator without signing
+        run: xcodebuild -project ios/Synd.xcodeproj -scheme Synd -configuration Debug -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' CODE_SIGNING_ALLOWED=NO build
