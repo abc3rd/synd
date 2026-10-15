@@ -2,3 +2,18 @@ synd_env/
 .idea/
 __pycache__/
 *.pyc
+
+# Apple signing credentials and local secrets
+*.p8
+*.p12
+*.pfx
+*.pem
+*.key
+*.mobileprovision
+.env
+.env.*
+!.env.example
+# Generated native project and release artifacts
+ios/*.xcodeproj/
+*.ipa
+*.xcarchive/
