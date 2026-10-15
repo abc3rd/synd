@@ -26,3 +26,89 @@ workflows:
     artifacts:
       - $HOME/Library/Developer/Xcode/DerivedData/**/Build/Products/**/*.app
       - /tmp/xcodebuild_logs/*.log
+
+  # Start manually on feature/native-ble-foundation after completing ios/TESTFLIGHT.md.
+  synd-ios-testflight:
+    name: Synd iOS - signed IPA and TestFlight upload
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    integrations:
+      app_store_connect: synd-app-store-connect
+    environment:
+      xcode: latest
+      groups:
+        - synd_ios_release
+      ios_signing:
+        distribution_type: app_store
+        bundle_identifier: org.synd.ios
+      vars:
+        BUNDLE_ID: org.synd.ios
+    scripts:
+      - name: Validate release configuration
+        script: |
+          set -euo pipefail
+          : "${APP_STORE_APPLE_ID:?Set numeric App Store Connect Apple ID in synd_ios_release}"
+          [[ "$APP_STORE_APPLE_ID" =~ ^[0-9]+$ ]] || { echo "APP_STORE_APPLE_ID must be numeric"; exit 1; }
+      - name: Install XcodeGen
+        script: |
+          set -euo pipefail
+          brew list xcodegen >/dev/null 2>&1 || brew install xcodegen
+      - name: Generate native Xcode project
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/ios"
+          xcodegen generate
+          actual_id=$(xcode-project detect-bundle-id --project "Synd.xcodeproj" --target Synd --config Release)
+          [[ "$actual_id" == "$BUNDLE_ID" ]] || { echo "Project and signing bundle IDs differ"; exit 1; }
+      - name: Apply App Store provisioning profiles
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/ios"
+          xcode-project use-profiles
+      - name: Set unique release build number
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR/ios"
+          # Fail on API/authentication errors; successful empty lookup means first upload.
+          latest=$(app-store-connect get-latest-build-number "$APP_STORE_APPLE_ID" --platform IOS)
+          latest=${latest:-0}
+          [[ "$latest" =~ ^[0-9]+$ ]] || { echo "Expected an integer Apple build number"; exit 1; }
+          next=$((10#$latest + 1))
+          # Use the app-wide Codemagic counter as a floor; serialize release builds.
+          [[ "${PROJECT_BUILD_NUMBER:-}" =~ ^[0-9]+$ ]] || { echo "Missing Codemagic PROJECT_BUILD_NUMBER"; exit 1; }
+          if (( PROJECT_BUILD_NUMBER > next )); then next=$PROJECT_BUILD_NUMBER; fi
+          agvtool new-version -all "$next"
+      - name: Archive Release and export signed IPA
+        script: |
+          set -euo pipefail
+          cd "$CM_BUILD_DIR"
+          xcode-project build-ipa \
+            --project "$CM_BUILD_DIR/ios/Synd.xcodeproj" \
+            --scheme Synd \
+            --config Release
+      - name: Verify exported IPA signature and identity
+        script: |
+          set -euo pipefail
+          shopt -s nullglob
+          ipas=("$CM_BUILD_DIR"/build/ios/ipa/*.ipa)
+          [[ ${#ipas[@]} -eq 1 ]] || { echo "Expected exactly one exported IPA"; exit 1; }
+          verify_dir=$(mktemp -d)
+          trap 'rm -rf "$verify_dir"' EXIT
+          unzip -q "${ipas[0]}" -d "$verify_dir"
+          apps=("$verify_dir"/Payload/*.app)
+          [[ ${#apps[@]} -eq 1 ]] || { echo "Expected one application"; exit 1; }
+          codesign --verify --deep --strict "${apps[0]}"
+          test -f "${apps[0]}/embedded.mobileprovision"
+          actual_id=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "${apps[0]}/Info.plist")
+          [[ "$actual_id" == "$BUNDLE_ID" ]] || { echo "Exported bundle ID differs"; exit 1; }
+          echo "Verified signed IPA for $actual_id"
+    artifacts:
+      - build/ios/ipa/*.ipa
+      - /tmp/xcodebuild_logs/*.log
+      - $HOME/Library/Developer/Xcode/DerivedData/**/Build/**/*.dSYM
+    publishing:
+      app_store_connect:
+        auth: integration
+        # Upload for internal testing; enable beta review only when preparing external testing.
+        submit_to_testflight: false
+        submit_to_app_store: false
